@@ -3,6 +3,7 @@
  * MongoDB + bounded account-revocable sessions + explicitly gated explanatory AI
  */
 
+if (require.main === module) console.log('Startup: loading application');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -16,6 +17,7 @@ const {analyzePriceTrends,observationsFromListings}=require('./lib/price-trends'
 const {normalizeModel}=require('./lib/trade-extraction');
 const { canonicalEmail, verifyPassword, createSessionSigner, sessionTTL, validateDatabaseName, parseTrustedProxyCidrs } = require('./lib/auth-security');
 const { MongoLoginLimiter } = require('./lib/login-limiter');
+const { createStartupGuard, boundedCleanup } = require('./lib/startup-guard');
 const app = express();
 
 // Same-origin UI only; do not expose authenticated APIs through wildcard CORS.
@@ -81,7 +83,7 @@ const mem = {
 // ── MONGODB (required for live ingress; configured failures never fall back) ──
 let db = null;
 let mongoClient = null;
-async function connectMongo() {
+async function connectMongo(startup) {
   if (!MONGO_URI) throw new Error('MongoDB must be configured; memory fallback is disabled');
   const databaseName = validateDatabaseName(MONGODB_DB_NAME);
   try {
@@ -89,15 +91,17 @@ async function connectMongo() {
     const driverParts = /^(6)\.(\d+)\.(\d+)$/.exec(driverVersion);
     if (!driverParts || Number(driverParts[2]) < 20) throw new Error('MongoDB driver 6.20+ within major 6 is required for bounded login transaction timeouts');
     const { MongoClient } = require('mongodb');
-    const client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 5000, writeConcern: { w: 'majority', wtimeoutMS: 5000 } });
-    await client.connect();
-    mongoClient = client;
+    // Empty staging DB and short interactive operations: bound handshake/socket stalls.
+    const client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 10000, socketTimeoutMS: 20000, writeConcern: { w: 'majority', wtimeoutMS: 5000 } });
+    mongoClient = client; // Track pending connections so failed startup can close them.
+    await startup.stage('mongo-connect', () => client.connect());
     const connectedDb = client.db(databaseName);
-    const topology = await connectedDb.admin().command({ hello: 1 });
+    const topology = await startup.stage('mongo-topology', () => connectedDb.admin().command({ hello: 1 }, { timeoutMS: 10000 }));
     validateTransactionTopology(topology);
     db = connectedDb;
     console.log('✅ MongoDB connected');
     tradeStore = new TradeStore(db, client, {freshnessHours:FRESHNESS_HOURS});
+    await startup.stage('mongo-indexes', async () => {
     await tradeStore.initialize();
     // Indexes
     await db.collection('group_listings_v1').createIndex({ timestamp: -1 });
@@ -106,12 +110,13 @@ async function connectMongo() {
     await db.collection('users').createIndex({ email: 1 }, { unique: true });
     loginLimiter = new MongoLoginLimiter(db.collection('auth_login_limits_v1'), JWT_SECRET, { client: mongoClient });
     await loginLimiter.initialize();
+    });
   } catch (e) {
     loginLimiter = null;
     db = null;
-    if (mongoClient) await mongoClient.close().catch(() => {});
+    console.error('MongoDB unavailable at startup stage: ' + startup.stageName + '. WhatsApp ingestion is blocked.');
+    if (mongoClient) await boundedCleanup(() => mongoClient.close());
     mongoClient = null;
-    console.error('MongoDB unavailable. WhatsApp ingestion is blocked.');
     if (MONGO_URI) throw new Error('Configured MongoDB is unavailable; refusing a memory fallback');
   }
 }
@@ -692,30 +697,40 @@ function startSnapshotScheduler() { return setInterval(async () => {
 async function start() {
   if (!AUTH_READY || ADMIN_EMAILS.size === 0) throw new Error('Set a private JWT_SECRET (32+ bytes) and trusted ADMIN_EMAILS before starting.');
   if (WHATSAPP_ENABLED && (!MONGO_URI || !providerConfigured())) throw new Error('Live ingestion requires MongoDB and webhook authentication.');
-  let timer;
+  let timer, startupListener;
+  const startup = createStartupGuard();
   try {
-    await connectMongo();
+    await connectMongo(startup);
     policy = new MongoChannelPolicy(db.collection('channel_privacy'));
-    await policy.initialize();
+    await startup.stage('privacy-policy', () => policy.initialize());
     if (!policy.ready) throw new Error('MongoDB privacy policy is unavailable; refusing to start.');
-    const server = await new Promise((resolve, reject) => {
-      const listener = app.listen(PORT, () => resolve(listener));
+    const server = await startup.stage('http-listen', () => new Promise((resolve, reject) => {
+      const listener = app.listen(PORT, () => {
+        if (!startup.active) { listener.close(); listener.closeAllConnections?.(); reject(new Error('Startup is no longer active')); return; }
+        resolve(listener);
+      });
+      startupListener = listener;
       listener.once('error', reject);
-    });
+    }));
+    startup.finish();
     timer = startSnapshotScheduler();
     console.log(`WA Trading Platform on port ${PORT}`);
     console.log(`WhatsApp ingestion: ${ingestionReady() ? 'enabled' : 'DISCONNECTED'}`);
     server.on('close', () => { clearInterval(timer); if (mongoClient) mongoClient.close().catch(() => {}); });
     return server;
   } catch (error) {
+    console.error('Startup failed at stage: ' + startup.stageName);
+    startup.finish();
+    if (startupListener) { startupListener.closeAllConnections?.(); await boundedCleanup(() => new Promise(resolve => startupListener.close(resolve))); }
     if (timer) clearInterval(timer);
-    if (policy) policy.ready = false;
-    if (mongoClient) await mongoClient.close().catch(() => {});
+    if (policy) policy.failClosed();
+    policy = null;
+    if (mongoClient) await boundedCleanup(() => mongoClient.close());
     mongoClient = null;
     db = null;
     loginLimiter = null;
     throw error;
   }
 }
-if (require.main === module) start().catch(() => { console.error('Startup blocked: check private configuration, database and policy storage.'); process.exitCode = 1; });
+if (require.main === module) start().catch(() => { console.error('Startup blocked: check private configuration, database and policy storage.'); process.exit(1); });
 module.exports = { app, get policy() { return policy; }, ingest, DB, mem, makeToken, verifyToken, authMiddleware, adminMiddleware, start };

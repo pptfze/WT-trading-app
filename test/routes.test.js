@@ -32,7 +32,7 @@ Module._load = function(name, ...args) {
 let server;
 try {
   const filename = path.resolve(__dirname, '../server.js');
-  const source = fs.readFileSync(filename, 'utf8').replace('let policy = null;', "const policy = new (require('./lib/channel-policy').ChannelPolicy)(process.env.CHANNEL_POLICY_FILE);");
+  const source = fs.readFileSync(filename, 'utf8').replace('let policy = null;', "let policy = new (require('./lib/channel-policy').ChannelPolicy)(process.env.CHANNEL_POLICY_FILE); policy.failClosed = () => { policy.ready = false; };");
   const isolated = new Module(filename, module);
   isolated.filename = filename;
   isolated.paths = Module._nodeModulePaths(path.dirname(filename));
