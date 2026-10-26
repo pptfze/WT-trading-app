@@ -1,0 +1,56 @@
+# REVIEW TEMPLATE ONLY: not applied; requires workspace, compute and secret approvals.
+services:
+  - type: web
+    name: wt-trading-selected-staging
+    runtime: node
+    plan: free
+    region: virginia
+    repo: https://github.com/pptfze/WT-trading-app
+    branch: staging/selected-sources-hardening-20261026
+    autoDeployTrigger: "off"
+    buildCommand: npm ci --ignore-scripts && npm run check && npm test
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24.22.1"
+      - key: NODE_ENV
+        value: "production"
+      - key: MONGODB_DB_NAME
+        value: "wa_trading_selected_staging"
+      - key: WHATSAPP_ENABLED
+        value: "false"
+      - key: WHAPI_TOKENS_JSON
+        value: "{}"
+      - key: AUTH_SESSION_TTL_SECONDS
+        value: "28800"
+      - key: MATCH_FRESHNESS_HOURS
+        value: "48"
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: APP_ALLOWED_EMAILS
+        sync: false
+      - key: AI_PRICE_EXPLANATION_ENABLED
+        value: "false"
+      - key: AI_PRICE_AGGREGATES_TO_ANTHROPIC_APPROVED
+        value: "false"
+      - key: AI_BRIEFING_ENABLED
+        value: "false"
+      - key: AI_BRIEFING_TO_ANTHROPIC_APPROVED
+        value: "false"
+      - key: AI_PROFILE_ENABLED
+        value: "false"
+      - key: AI_PROFILE_TO_ANTHROPIC_APPROVED
+        value: "false"
+      - key: AI_AUTOREPLY_ENABLED
+        value: "false"
+      - key: AI_AUTOREPLY_TO_ANTHROPIC_APPROVED
+        value: "false"
+      - key: AI_ITEM_ENABLED
+        value: "false"
+      - key: AI_ITEM_TO_ANTHROPIC_APPROVED
+        value: "false"
