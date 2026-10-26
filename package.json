@@ -1,12 +1,20 @@
 {
   "name": "wa-trading-platform",
-  "version": "2.0.0",
+  "version": "2.2.0-live-hardening-dev",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check-syntax.js",
+    "operator:help": "node scripts/manage-operator.js --help",
+    "test:integration": "node --test integration/*.test.js"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "mongodb": "^6.3.0"
+    "mongodb": "^6.20.0"
   },
-  "engines": { "node": ">=18.0.0" }
+  "engines": {
+    "node": "24.x"
+  }
 }

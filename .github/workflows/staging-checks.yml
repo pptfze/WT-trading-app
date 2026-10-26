@@ -1,0 +1,39 @@
+name: Disconnected staging checks
+on:
+  push:
+    branches: ['staging/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm run check
+      - run: npm test
+      - name: Disposable local MongoDB replica set (no Atlas access)
+        run: |
+          docker run -d --name wt-ci-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 45); do
+            if docker exec wt-ci-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
+            sleep 2
+          done
+          docker exec wt-ci-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 45); do
+            if docker exec wt-ci-mongo mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: npm run test:integration
+      - if: always()
+        run: docker rm -f wt-ci-mongo || true
