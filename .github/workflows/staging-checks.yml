@@ -1,0 +1,44 @@
+name: Disconnected staging checks
+on:
+  push:
+    branches: ['staging/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-22.04 # MongoDB 8 requires a Linux kernel below 6.19
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm run check
+      - run: npm test
+      - run: python3 test/prepare-crm-import.test.py
+      - name: Disposable local MongoDB replica set (no Atlas access)
+        run: |
+          set -Eeuo pipefail
+          uname -r
+          trap 'status=$?; if [ "$status" -ne 0 ]; then docker inspect wt-ci-mongo --format "{{json .State}}" || true; docker logs --tail 120 wt-ci-mongo || true; fi' EXIT
+          docker run -d --name wt-ci-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 45); do
+            if docker exec wt-ci-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' wt-ci-mongo)" != true ]; then exit 1; fi
+            sleep 2
+          done
+          docker exec wt-ci-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 45); do
+            if docker exec wt-ci-mongo mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: npm run test:integration
+      - if: always()
+        run: docker rm -f wt-ci-mongo || true
