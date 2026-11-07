@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # MongoDB 8 requires a Linux kernel below 6.19
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -25,6 +25,7 @@ jobs:
       - name: Disposable local MongoDB replica set (no Atlas access)
         run: |
           set -Eeuo pipefail
+          uname -r
           trap 'status=$?; if [ "$status" -ne 0 ]; then docker inspect wt-ci-mongo --format "{{json .State}}" || true; docker logs --tail 120 wt-ci-mongo || true; fi' EXIT
           docker run -d --name wt-ci-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
           for i in $(seq 1 45); do
