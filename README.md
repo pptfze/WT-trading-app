@@ -1,3 +1,7 @@
+# Buyer CRM development extension
+
+See [CRM_SETUP.md](CRM_SETUP.md) for the new buyer import, sales pipeline, permissions, verification and launch gates. This source bundle contains no real prospect data.
+
 # WA Trading: disconnected live-hardening development build
 
 This source package builds on the selected-source privacy work for

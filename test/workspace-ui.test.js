@@ -71,10 +71,10 @@ function client(fetchImpl = async () => { throw new Error('Unexpected request');
   };
 }
 
-test('workspace exposes six primary sections and keeps extra tools secondary', () => {
+test('workspace exposes seven primary sections and keeps extra tools secondary', () => {
   const primary = html.split('<div class="tabs">')[1].split('<details class="nav-tools">')[0];
   const navigation = [...primary.matchAll(/data-tab="([^"]+)"[^>]*>([^<]+)<\/button>/g)].map(match => [match[1], match[2]]);
-  assert.deepEqual(navigation, [['feed', 'Offers'], ['requests', 'Buyer Requests'], ['matches', 'Matches'], ['market', 'Price Trends'], ['traders', 'Contacts'], ['channels', 'Sources']]);
+  assert.deepEqual(navigation, [['feed', 'Offers'], ['requests', 'Buyer Requests'], ['matches', 'Matches'], ['market', 'Price Trends'], ['crm', 'Buyers CRM'], ['traders', 'Contacts'], ['channels', 'Sources']]);
   assert.match(primary, /data-tab="channels" hidden/);
   assert.match(html, /<summary>More tools<\/summary>/);
   assert.match(html, /id="trendStatus" role="status" aria-live="polite"/);

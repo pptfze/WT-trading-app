@@ -18,6 +18,7 @@ const {normalizeModel}=require('./lib/trade-extraction');
 const { canonicalEmail, verifyPassword, createSessionSigner, sessionTTL, validateDatabaseName, parseTrustedProxyCidrs } = require('./lib/auth-security');
 const { MongoLoginLimiter } = require('./lib/login-limiter');
 const { createStartupGuard, boundedCleanup } = require('./lib/startup-guard');
+const { BuyerCRM, registerBuyerCRM } = require('./lib/buyer-crm');
 const app = express();
 
 // Same-origin UI only; do not expose authenticated APIs through wildcard CORS.
@@ -31,6 +32,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.use('/api/crm/import', express.json({ limit: '16mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -56,6 +58,8 @@ try {
 } catch { /* Invalid provider configuration stays disconnected. */ }
 let policy = null;
 let tradeStore = null;
+let buyerCRM = null;
+const crmTeam = async () => (await DB.getUsers()).filter(user => user.disabled !== true && ALLOWED_EMAILS.has(user.email));
 const FRESHNESS_HOURS = Math.max(1, Math.min(168, Number(process.env.MATCH_FRESHNESS_HOURS) || 48));
 const providerConfigured = () => Buffer.byteLength(WEBHOOK_SECRET) >= 32;
 const ingestionReady = () => WHATSAPP_ENABLED && providerConfigured() && policy?.ready && !!db;
@@ -103,6 +107,8 @@ async function connectMongo(startup) {
     tradeStore = new TradeStore(db, client, {freshnessHours:FRESHNESS_HOURS});
     await startup.stage('mongo-indexes', async () => {
     await tradeStore.initialize();
+    buyerCRM = new BuyerCRM(db, client, { secret: JWT_SECRET, getTeam: crmTeam });
+    await buyerCRM.initialize();
     // Indexes
     await db.collection('group_listings_v1').createIndex({ timestamp: -1 });
     await db.collection('group_listings_v1').createIndex({ model: 1 });
@@ -259,7 +265,7 @@ async function authMiddleware(req, res, next) {
     const user = await DB.getUser(claim.email);
     if (!sessions.accountMatches(claim, user)) return res.status(401).json({ error: 'Invalid credentials' });
     // Always resolve the current role from the trusted account store.
-    req.user = { email: user.email, name: user.name, role: user.role, company: user.company };
+    req.user = { email: user.email, name: user.name, role: user.role === 'admin' && ADMIN_EMAILS.has(user.email) ? 'admin' : 'member', company: user.company };
     next();
   } catch { res.status(503).json({ error: 'Account storage unavailable' }); }
 }
@@ -312,6 +318,8 @@ app.get('/api/team', authMiddleware, asyncRoute(async (req, res) => {
   const users = await DB.getUsers();
   res.json(users.map(u => ({ email: u.email, name: u.name, role: u.role, company: u.company })));
 }));
+
+registerBuyerCRM(app, { authMiddleware, adminMiddleware, asyncRoute, getStore: () => buyerCRM, getTeam: crmTeam });
 
 // ── WHAPI WEBHOOK ──
 const currentPolicy = {

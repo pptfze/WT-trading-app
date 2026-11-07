@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="WA Trading">
 <meta name="theme-color" content="#f4f7fa">
 <title>WA Trading Platform</title>
+<link rel="stylesheet" href="/crm.css">
 <!-- Optional locally installed dependency; no CDN or third-party requests. -->
 <script src="/vendor/xlsx.full.min.js" defer></script>
 <style>
@@ -380,6 +381,7 @@ header{background:#142c3d;border:0;color:#fff}.h-inner{padding:24px 20px;align-i
     <button class="tab" data-tab="requests" onclick="showTab('requests',this)">Buyer Requests</button>
     <button class="tab" data-tab="matches" onclick="showTab('matches',this)">Matches</button>
     <button class="tab" data-tab="market" onclick="showTab('market',this)">Price Trends</button>
+    <button class="tab" data-tab="crm" onclick="showTab('crm',this)">Buyers CRM</button>
     <button class="tab" data-tab="traders" onclick="showTab('traders',this)">Contacts</button>
     <button class="tab" data-tab="channels" hidden onclick="showTab('channels',this)">Sources</button>
     <details class="nav-tools"><summary>More tools</summary><div class="nav-tool-items">
@@ -417,6 +419,8 @@ header{background:#142c3d;border:0;color:#fff}.h-inner{padding:24px 20px;align-i
 </div>
 
 <!-- SALES MATCHES -->
+<div class="pane" id="pane-crm"><div id="crmRoot"></div></div>
+
 <div class="pane" id="pane-matches">
   <div class="pbody">
     <div class="match-toolbar">
@@ -758,6 +762,7 @@ function enterApp(){
 }
 
 function setupUI(){
+  if(window.WACRM) window.WACRM.reset();
   resetFeedSync();
   resetMatches();
   resetPriceTrends();
@@ -812,6 +817,7 @@ async function checkHealth(){
 }
 
 function logout(){
+  if(window.WACRM) window.WACRM.reset();
   if(logoutTask&&!S.token&&!S.user&&!S.isDemo)return logoutTask;
   const token=S.isDemo?'':S.token;
   const version=++sessionVersion;channelsBusy=false;channelsLoaded=false;
@@ -1615,6 +1621,7 @@ function showTab(id,btn){
   if(btn) btn.classList.add('active');
   if(id==='margin'){renderAlerts();renderSnaps();}
   if(id==='matches') refreshMatches();
+  if(id==='crm'&&window.WACRM) window.WACRM.open();
   if(id==='feed'||id==='requests'){
     feedMode=id==='requests'?'WTB':'WTS';af='all';
     document.querySelectorAll('#pane-feed .chip').forEach((chip,index)=>chip.classList[index===0?'add':'remove']('active'));
@@ -1960,5 +1967,6 @@ function readWatchlist(){try{const value=JSON.parse(localStorage.getItem('wa_wat
 function saveWatchlist(){try{localStorage.setItem('wa_watch',JSON.stringify(S.watchlist));}catch{toast('Watchlist storage is unavailable in this browser');}}
 function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
 </script>
+<script src="/crm.js"></script>
 </body>
 </html>

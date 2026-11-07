@@ -4,3 +4,9 @@ data/
 .env.*
 !.env.example
 *.lock.tmp
+
+# Private CRM imports and workbook data never belong in the public repository.
+private/
+crm-imports/
+*.xlsx
+prospects*.json

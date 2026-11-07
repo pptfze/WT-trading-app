@@ -1,6 +1,6 @@
 {
   "name": "wa-trading-platform",
-  "version": "2.2.0-live-hardening-dev",
+  "version": "2.3.0-buyer-crm-dev",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

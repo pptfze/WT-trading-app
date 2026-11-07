@@ -121,3 +121,15 @@ test('production startup rejects missing MongoDB before opening an HTTP listener
   await assert.rejects(server.start(), /MongoDB must be configured/);
   assert.equal(networkCalls.length, 0);
 });
+
+
+test('database admin role outside ADMIN_EMAILS never grants CRM owner privileges', async () => {
+  member.role = 'admin';
+  try {
+    const res = await invoke('get', '/api/auth/me', { actor: member });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.role, 'member');
+    const blocked = await invoke('get', '/api/crm/team', { actor: member });
+    assert.equal(blocked.statusCode, 403);
+  } finally { member.role = 'member'; }
+});
