@@ -24,9 +24,12 @@ jobs:
       - run: python3 test/prepare-crm-import.test.py
       - name: Disposable local MongoDB replica set (no Atlas access)
         run: |
+          set -Eeuo pipefail
+          trap 'status=$?; if [ "$status" -ne 0 ]; then docker inspect wt-ci-mongo --format "{{json .State}}" || true; docker logs --tail 120 wt-ci-mongo || true; fi' EXIT
           docker run -d --name wt-ci-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
           for i in $(seq 1 45); do
             if docker exec wt-ci-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' wt-ci-mongo)" != true ]; then exit 1; fi
             sleep 2
           done
           docker exec wt-ci-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
